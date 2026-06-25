@@ -177,7 +177,7 @@ defmodule Extop.TUI do
       0 -> dashboard_widgets(state, area)
       1 -> [{process_widget(state, area), area}]
       2 -> network_tab_widgets(state, area)
-      3 -> [{info_widget(state), area}]
+      3 -> system_tab_widgets(state, area)
       _ -> []
     end
   end
@@ -558,7 +558,17 @@ defmodule Extop.TUI do
     }
   end
 
-  defp info_widget(state) do
+  defp system_tab_widgets(state, area) do
+    [system_area, beam_area] =
+      Layout.split(area, :horizontal, [{:percentage, 50}, {:min, 0}])
+
+    [
+      {system_info_widget(state), system_area},
+      {beam_info_widget(), beam_area}
+    ]
+  end
+
+  defp system_info_widget(state) do
     lines =
       case Map.get(state, :system_info, []) do
         [] -> [Line.new([Span.new("loading system info…", style: Theme.text_style())])]
@@ -569,6 +579,14 @@ defmodule Extop.TUI do
       text: lines,
       style: Theme.text_style(),
       block: panel_block(" System ", Theme.flamingo())
+    }
+  end
+
+  defp beam_info_widget do
+    %Paragraph{
+      text: Extop.BeamStats.lines(),
+      style: Theme.text_style(),
+      block: panel_block(" BEAM ", Theme.mauve())
     }
   end
 

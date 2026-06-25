@@ -97,26 +97,50 @@ defmodule Extop.Stats do
     net_tx_history =
       (prev && Map.get(prev, :net_tx_history, [])) |> push_history(total_tx)
 
-    {system_info, system_info_at} = Extop.Fastfetch.fetch(prev)
+    hostname = Map.get_lazy(prev || %{}, :hostname, &read_hostname/0)
+    cpu_name = Map.get_lazy(prev || %{}, :cpu_name, &read_cpu_name/0)
+    uptime_seconds = read_uptime()
+    load_avg = read_load_avg()
+    memory = read_memory()
+    swap = read_swap()
+    disk = read_disk()
+
+    snapshot = %{
+      hostname: hostname,
+      uptime_seconds: uptime_seconds,
+      load_avg: load_avg,
+      cpu_name: cpu_name,
+      cpu_total: cpu_total,
+      cpu_temp: cpu_temp,
+      gpu_name: gpu_name,
+      gpu_usage: gpu_usage,
+      gpu_temp: gpu_temp,
+      memory: memory,
+      swap: swap,
+      disk: disk,
+      network: network
+    }
+
+    {system_info, system_info_at} = Extop.SystemInfo.fetch(prev, snapshot)
 
     %{
-      hostname: Map.get_lazy(prev || %{}, :hostname, &read_hostname/0),
-      uptime_seconds: read_uptime(),
-      load_avg: read_load_avg(),
+      hostname: hostname,
+      uptime_seconds: uptime_seconds,
+      load_avg: load_avg,
       cpu_cores: cpu_cores,
       cpu_total: cpu_total,
       cpu_history: cpu_history,
       cpu_temp: cpu_temp,
-      cpu_name: Map.get_lazy(prev || %{}, :cpu_name, &read_cpu_name/0),
+      cpu_name: cpu_name,
       gpu_usage: gpu_usage,
       gpu_history: gpu_history,
       gpu_temp: gpu_temp,
       gpu_name: gpu_name,
       gpu_vendor: gpu_vendor,
       gpu_card: gpu_card,
-      memory: read_memory(),
-      swap: read_swap(),
-      disk: read_disk(),
+      memory: memory,
+      swap: swap,
+      disk: disk,
       network: network,
       net_rx_history: net_rx_history,
       net_tx_history: net_tx_history,
