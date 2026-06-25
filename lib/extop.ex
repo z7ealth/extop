@@ -7,6 +7,8 @@ defmodule Extop do
       mix run
 
   The TUI is started under supervision when the app boots. Press `q` or `Esc` to quit.
-  Use `↑`/`↓` to scroll the process list.
+
+  On the **Processes** tab: use `↑`/`↓`/`j` to select, `/` to filter, `p`/`u`/`n`/`c`/`m` to sort,
+  and `t`/`k`/`s`/`r`/`h`/`i` to send signals (TERM/KILL/STOP/CONT/HUP/INT).
   """
 end

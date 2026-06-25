@@ -11,6 +11,7 @@ defmodule Extop.TUI do
   alias ExRatatui.Widgets.Block.Title
   alias ExRatatui.Widgets.Chart.{Axis, Dataset}
   alias Extop.Theme
+  alias Extop.Processes
 
   @refresh_interval 1_000
   @resize_debounce 100
@@ -22,7 +23,12 @@ defmodule Extop.TUI do
 
     {:ok,
      Map.merge(Extop.Stats.collect(), %{
-       process_offset: 0,
+       process_selection: 0,
+       process_filter: "",
+       process_filter_active: false,
+       process_sort: {:cpu, :desc},
+       process_pending_signal: nil,
+       process_status: nil,
        tab: 0,
        resize_timer: nil
      })}
@@ -31,29 +37,89 @@ defmodule Extop.TUI do
   @impl true
   def handle_event(%Event.Key{code: "q", kind: "press"}, state), do: {:stop, state}
   def handle_event(%Event.Key{code: "Q", kind: "press"}, state), do: {:stop, state}
+
+  def handle_event(%Event.Key{code: "esc", kind: "press"}, %{tab: 1} = state) do
+    cond do
+      state.process_pending_signal ->
+        {:noreply, %{state | process_pending_signal: nil}}
+
+      state.process_filter_active ->
+        {:noreply, %{state | process_filter_active: false}}
+
+      state.process_filter != "" ->
+        {:noreply, process_filter_changed(state, "")}
+
+      true ->
+        {:stop, state}
+    end
+  end
+
   def handle_event(%Event.Key{code: "esc", kind: "press"}, state), do: {:stop, state}
+
+  def handle_event(%Event.Key{code: code, kind: "press"}, %{tab: 1, process_pending_signal: pending} = state)
+      when not is_nil(pending) and code in ["y", "enter"] do
+    {:noreply, confirm_process_signal(state)}
+  end
+
+  def handle_event(%Event.Key{code: code, kind: "press"}, %{tab: 1, process_pending_signal: pending} = state)
+      when not is_nil(pending) and code in ["n"] do
+    {:noreply, %{state | process_pending_signal: nil, process_status: "Signal cancelled"}}
+  end
+
+  def handle_event(%Event.Key{code: _code, kind: "press"}, %{tab: 1, process_pending_signal: pending} = state)
+      when not is_nil(pending) do
+    {:noreply, state}
+  end
+
+  def handle_event(%Event.Key{code: code, kind: "press", modifiers: []}, %{tab: 1, process_filter_active: true} = state)
+      when code in ["enter"] do
+    {:noreply, %{state | process_filter_active: false}}
+  end
+
+  def handle_event(%Event.Key{code: "backspace", kind: "press"}, %{tab: 1, process_filter_active: true} = state) do
+    filter = String.slice(state.process_filter, 0..-2//1)
+    {:noreply, process_filter_changed(state, filter)}
+  end
+
+  def handle_event(%Event.Key{code: code, kind: "press", modifiers: []}, %{tab: 1, process_filter_active: true} = state)
+      when byte_size(code) == 1 do
+    {:noreply, process_filter_changed(state, state.process_filter <> code)}
+  end
+
+  def handle_event(%Event.Key{code: code, kind: "press", modifiers: []}, %{tab: 1} = state)
+      when code in ["/", "f"] do
+    {:noreply, %{state | process_filter_active: true, process_status: nil}}
+  end
+
+  def handle_event(%Event.Key{code: code, kind: "press", modifiers: []}, %{tab: 1} = state)
+      when code in ["p", "u", "n", "c", "m"] do
+    {:noreply, process_sort_changed(state, code)}
+  end
+
+  def handle_event(%Event.Key{code: code, kind: "press", modifiers: []}, %{tab: 1} = state)
+      when code in ["t", "k", "s", "r", "h", "i"] do
+    {:noreply, request_process_signal(state, code)}
+  end
+
+  def handle_event(%Event.Key{code: code, kind: "press"}, %{tab: 1} = state)
+      when code in ["up", "down", "j", "page_up", "page_down", "home", "end"] do
+    {:noreply, process_move_selection(state, code)}
+  end
 
   def handle_event(%Event.Key{code: "tab", kind: "press"}, state) do
     {:noreply, %{state | tab: rem(state.tab + 1, length(@tabs))}}
   end
 
   def handle_event(%Event.Key{code: code, kind: "press"}, state)
-      when code in ["1", "2", "3", "4"] do
-    {:noreply, %{state | tab: String.to_integer(code) - 1}}
+      when code in ["1", "2", "3", "4"] and is_integer(state.tab) do
+    if state.tab == 1 and state.process_filter_active do
+      {:noreply, process_filter_changed(state, state.process_filter <> code)}
+    else
+      {:noreply, %{state | tab: String.to_integer(code) - 1}}
+    end
   end
 
-  def handle_event(%Event.Key{code: code, kind: "press"}, %{tab: 1} = state)
-      when code in ["up", "k"] do
-    {:noreply, %{state | process_offset: max(state.process_offset - 1, 0)}}
-  end
-
-  def handle_event(%Event.Key{code: code, kind: "press"}, %{tab: 1} = state)
-      when code in ["down", "j"] do
-    max_offset = max(length(state.processes) - 1, 0)
-    {:noreply, %{state | process_offset: min(state.process_offset + 1, max_offset)}}
-  end
-
-  def handle_event(%Event.Key{code: "r", kind: "press"}, state) do
+  def handle_event(%Event.Key{code: "r", kind: "press"}, %{tab: 3} = state) do
     {:noreply, refresh(Map.delete(state, :system_info_at))}
   end
 
@@ -507,42 +573,203 @@ defmodule Extop.TUI do
   end
 
   defp process_widget(state, area) do
-    visible = max(area.height - 3, 1)
+    visible = max(area.height - 4, 1)
+    procs = visible_processes(state)
+    total = length(procs)
+    selection = Processes.clamp_selection(state.process_selection, total)
+    scroll = Processes.scroll_offset(selection, total, visible)
+    relative = selection - scroll
 
     rows =
-      state.processes
-      |> Enum.drop(state.process_offset)
+      procs
+      |> Enum.drop(scroll)
       |> Enum.take(visible)
       |> Enum.map(fn proc ->
         [
           to_string(proc.pid),
+          proc.user,
           proc.name,
           "#{Float.round(proc.cpu, 1)}%",
           "#{Float.round(proc.mem, 1)}%"
         ]
       end)
 
-    rows = if rows == [], do: [["--", "no processes", "--", "--"]], else: rows
+    rows = if rows == [], do: [["--", "--", "no processes", "--", "--"]], else: rows
 
     %Table{
-      header: ["PID", "Name", "CPU", "Mem"],
+      header: process_header(state),
+      footer: process_footer(state, total),
       rows: rows,
-      widths: [{:length, 8}, {:min, 10}, {:length, 8}, {:length, 8}],
+      widths: [{:length, 8}, {:length, 10}, {:min, 10}, {:length, 8}, {:length, 8}],
       style: Theme.table_row(),
       header_style: Theme.table_header(),
+      footer_style: Theme.dim_style(),
       highlight_style: Theme.table_highlight(),
       highlight_symbol: "▸ ",
-      selected: 0,
-      block: panel_block(" Processes ", Theme.teal_dim())
+      selected: if(total == 0, do: nil, else: relative),
+      block: process_panel_block(state)
     }
+  end
+
+  defp process_panel_block(state) do
+    title =
+      cond do
+        state.process_filter_active ->
+          " Processes  /#{state.process_filter}_ "
+
+        state.process_filter != "" ->
+          " Processes  /#{state.process_filter} "
+
+        true ->
+          " Processes "
+      end
+
+    panel_block(title, Theme.lavender())
+  end
+
+  defp process_header(state) do
+    {field, dir} = state.process_sort
+    arrow = if dir == :desc, do: "↓", else: "↑"
+
+    for {column, label} <- [pid: "PID", user: "User", name: "Name", cpu: "CPU", mem: "Mem"] do
+      if column == field, do: "#{label} #{arrow}", else: label
+    end
+  end
+
+  defp process_footer(state, total) do
+    parts =
+      [
+        "#{total} shown",
+        "sort #{Processes.sort_label(state.process_sort)}"
+      ]
+      |> maybe_prepend_filter(state.process_filter)
+      |> maybe_prepend_pending_signal(state.process_pending_signal)
+      |> maybe_prepend_status(state.process_status)
+
+    [Enum.join(parts, "  ·  ")]
+  end
+
+  defp maybe_prepend_filter(parts, ""), do: parts
+  defp maybe_prepend_filter(parts, filter), do: ["filter: #{filter}" | parts]
+
+  defp maybe_prepend_pending_signal(parts, nil), do: parts
+
+  defp maybe_prepend_pending_signal(parts, %{signal: signal, pid: pid, name: name}) do
+    ["#{Processes.signal_name(signal)} → #{name} (#{pid})? y/n" | parts]
+  end
+
+  defp maybe_prepend_status(parts, nil), do: parts
+  defp maybe_prepend_status(parts, status), do: [status | parts]
+
+  defp visible_processes(state) do
+    Processes.prepare(state.processes, state.process_filter, state.process_sort)
+  end
+
+  defp selected_process(state) do
+    state |> visible_processes() |> Enum.at(state.process_selection)
+  end
+
+  defp process_filter_changed(state, filter) do
+    procs = Processes.prepare(state.processes, filter, state.process_sort)
+
+    state
+    |> Map.put(:process_filter, filter)
+    |> Map.put(:process_selection, Processes.clamp_selection(0, length(procs)))
+    |> Map.put(:process_status, nil)
+  end
+
+  defp process_sort_changed(state, code) do
+    field =
+      case code do
+        "p" -> :pid
+        "u" -> :user
+        "n" -> :name
+        "c" -> :cpu
+        "m" -> :mem
+      end
+
+    sort = Processes.toggle_sort(state.process_sort, field)
+    pid = selected_process(state) && selected_process(state).pid
+    procs = Processes.prepare(state.processes, state.process_filter, sort)
+
+    selection =
+      if pid do
+        Enum.find_index(procs, &(&1.pid == pid)) || 0
+      else
+        0
+      end
+
+    %{state | process_sort: sort, process_selection: selection, process_status: nil}
+  end
+
+  defp process_move_selection(state, code) do
+    total = length(visible_processes(state))
+
+    delta =
+      case code do
+        "up" -> -1
+        "down" -> 1
+        "j" -> 1
+        "page_up" -> -10
+        "page_down" -> 10
+        "home" -> -total
+        "end" -> total
+      end
+
+    selection =
+      state.process_selection
+      |> Kernel.+(delta)
+      |> Processes.clamp_selection(total)
+
+    %{state | process_selection: selection, process_status: nil}
+  end
+
+  defp request_process_signal(state, code) do
+    case selected_process(state) do
+      nil ->
+        %{state | process_status: "No process selected"}
+
+      proc ->
+        signal = Processes.signal_for_key(code)
+
+        if Processes.confirm_signal?(signal) do
+          %{state | process_pending_signal: %{signal: signal, pid: proc.pid, name: proc.name}}
+        else
+          deliver_process_signal(state, proc, signal)
+        end
+    end
+  end
+
+  defp confirm_process_signal(%{process_pending_signal: %{signal: signal, pid: pid, name: name}} = state) do
+    state
+    |> Map.put(:process_pending_signal, nil)
+    |> deliver_process_signal(%{pid: pid, name: name}, signal)
+  end
+
+  defp deliver_process_signal(state, proc, signal) do
+    status =
+      case Processes.send_signal(proc.pid, signal) do
+        :ok ->
+          "Sent #{Processes.signal_name(signal)} to #{proc.name} (#{proc.pid})"
+
+        {:error, reason} ->
+          "Failed #{Processes.signal_name(signal)} on #{proc.pid}: #{inspect(reason)}"
+      end
+
+    %{state | process_status: status}
   end
 
   defp footer_widget(state) do
     hints =
       case state.tab do
-        1 -> " ↑↓ scroll · "
-        3 -> " r refresh system · "
-        _ -> " "
+        1 ->
+          " ↑↓/j scroll · / filter · p/u/n/c/m sort · t/k/s/r/h/i signal · "
+
+        3 ->
+          " r refresh system · "
+
+        _ ->
+          " "
       end
 
     %Paragraph{
@@ -581,13 +808,40 @@ defmodule Extop.TUI do
   end
 
   defp refresh(state) do
-    offset = Map.get(state, :process_offset, 0)
-    tab = Map.get(state, :tab, 0)
-    resize_timer = Map.get(state, :resize_timer)
+    preserved =
+      Map.take(state, [
+        :process_selection,
+        :process_filter,
+        :process_filter_active,
+        :process_sort,
+        :process_pending_signal,
+        :process_status,
+        :tab,
+        :resize_timer
+      ])
+
+    filter = Map.get(preserved, :process_filter, "")
+    sort = Map.get(preserved, :process_sort, {:cpu, :desc})
+    procs_before = Processes.prepare(state.processes, filter, sort)
+    selected_pid = procs_before |> Enum.at(Map.get(preserved, :process_selection, 0)) |> then(&(&1 && &1.pid))
 
     state
     |> Extop.Stats.collect()
-    |> Map.merge(%{process_offset: offset, tab: tab, resize_timer: resize_timer})
+    |> then(fn fresh ->
+      procs_after = Processes.prepare(fresh.processes, filter, sort)
+
+      selection =
+        if selected_pid do
+          Enum.find_index(procs_after, &(&1.pid == selected_pid)) ||
+            Processes.clamp_selection(Map.get(preserved, :process_selection, 0), length(procs_after))
+        else
+          Processes.clamp_selection(Map.get(preserved, :process_selection, 0), length(procs_after))
+        end
+
+      fresh
+      |> Map.merge(preserved)
+      |> Map.put(:process_selection, selection)
+    end)
   end
 
   defp schedule_refresh, do: Process.send_after(self(), :refresh, @refresh_interval)

@@ -60,7 +60,9 @@ defmodule Extop.Stats do
           net_tx_history: [non_neg_integer()],
           system_info: [ExRatatui.Text.Line.t()],
           system_info_at: integer(),
-          processes: [%{pid: non_neg_integer(), name: String.t(), cpu: float(), mem: float()}],
+          processes: [
+            %{pid: non_neg_integer(), user: String.t(), name: String.t(), cpu: float(), mem: float()}
+          ],
           prev_cpu: map() | nil,
           prev_net: map() | nil,
           prev_net_at: integer() | nil
@@ -120,7 +122,7 @@ defmodule Extop.Stats do
       net_tx_history: net_tx_history,
       system_info: system_info,
       system_info_at: system_info_at,
-      processes: read_processes(),
+      processes: read_processes(prev),
       prev_cpu: new_prev_cpu,
       prev_net: new_prev_net,
       prev_net_at: now
@@ -694,30 +696,8 @@ defmodule Extop.Stats do
     end
   end
 
-  defp read_processes do
-    output =
-      :os.cmd(~c"ps ax -o pid=,comm=,pcpu=,pmem= --no-headers --sort=-pcpu 2>/dev/null")
-      |> to_string()
-
-    output
-    |> String.split("\n", trim: true)
-    |> Enum.take(50)
-    |> Enum.map(fn line ->
-      case Regex.run(~r/^\s*(\d+)\s+(\S+)\s+([\d.]+)\s+([\d.]+)/, line) do
-        [_, pid, name, cpu, mem] ->
-          %{
-            pid: String.to_integer(pid),
-            name: String.slice(name, 0, 20),
-            cpu: String.to_float(cpu),
-            mem: String.to_float(mem)
-          }
-
-        _ ->
-          nil
-      end
-    end)
-    |> Enum.reject(&is_nil/1)
-  rescue
-    _ -> []
+  defp read_processes(prev) do
+    cached = prev && Map.get(prev, :processes, [])
+    Extop.Processes.fetch(cached)
   end
 end
