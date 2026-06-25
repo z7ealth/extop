@@ -1,27 +1,39 @@
 defmodule Extop.Theme do
   @moduledoc false
 
-  # Catppuccin Mocha — https://github.com/catppuccin/catppuccin
+  # Catppuccin Macchiato — softer contrast than Mocha, warmer mid-tones
+  # https://github.com/catppuccin/catppuccin
 
   alias ExRatatui.Style
 
-  @teal {:rgb, 148, 226, 213}
-  @cyan {:rgb, 137, 220, 235}
-  @aqua {:rgb, 116, 199, 236}
-  @mint {:rgb, 166, 227, 161}
-  @teal_dim {:rgb, 203, 166, 247}
-  @border {:rgb, 69, 71, 90}
-  @border_bright {:rgb, 148, 226, 213}
-  @text {:rgb, 205, 214, 244}
-  @text_dim {:rgb, 127, 132, 156}
-  @warn {:rgb, 250, 179, 135}
-  @critical {:rgb, 243, 139, 168}
+  @teal {:rgb, 139, 213, 202}
+  @sky {:rgb, 145, 215, 227}
+  @sapphire {:rgb, 125, 196, 228}
+  @green {:rgb, 166, 218, 149}
+  @yellow {:rgb, 238, 212, 159}
+  @mauve {:rgb, 198, 160, 246}
+  @lavender {:rgb, 183, 189, 248}
+  @pink {:rgb, 245, 189, 230}
+  @flamingo {:rgb, 240, 198, 198}
+  @peach {:rgb, 245, 169, 127}
+  @red {:rgb, 237, 135, 150}
+  @border {:rgb, 73, 77, 100}
+  @border_bright {:rgb, 139, 213, 202}
+  @surface {:rgb, 54, 58, 79}
+  @text {:rgb, 202, 211, 245}
+  @subtext {:rgb, 184, 192, 224}
+  @text_dim {:rgb, 128, 135, 162}
 
   def teal, do: @teal
-  def cyan, do: @cyan
-  def aqua, do: @aqua
-  def mint, do: @mint
-  def teal_dim, do: @teal_dim
+  def cyan, do: @sky
+  def sky, do: @sky
+  def aqua, do: @sapphire
+  def mint, do: @green
+  def teal_dim, do: @lavender
+  def pink, do: @pink
+  def mauve, do: @mauve
+  def lavender, do: @lavender
+  def flamingo, do: @flamingo
   def border, do: @border
   def border_bright, do: @border_bright
   def text, do: @text
@@ -35,37 +47,39 @@ defmodule Extop.Theme do
   end
 
   def panel_border(accent \\ @border_bright), do: style(accent)
-  def header_border, do: style(@teal, modifiers: [:bold])
+  def panel_title(accent), do: style(accent, modifiers: [:bold])
+  def gauge_track, do: style(nil, bg: @surface)
+  def header_border, do: style(@mauve, modifiers: [:bold])
   def title_style, do: style(@teal, modifiers: [:bold])
-  def accent_style, do: style(@cyan, modifiers: [:bold])
+  def accent_style, do: style(@sky, modifiers: [:bold])
   def text_style, do: style(@text)
   def dim_style, do: style(@text_dim)
 
-  def usage_color(ratio) when ratio >= 0.9, do: @critical
-  def usage_color(ratio) when ratio >= 0.7, do: @warn
-  def usage_color(ratio) when ratio >= 0.4, do: @aqua
-  def usage_color(_), do: @mint
+  def usage_color(ratio) when ratio >= 0.9, do: @red
+  def usage_color(ratio) when ratio >= 0.7, do: @peach
+  def usage_color(ratio) when ratio >= 0.4, do: @yellow
+  def usage_color(_), do: @green
 
-  def load_color(load) when load >= 4.0, do: @critical
-  def load_color(load) when load >= 2.0, do: @warn
-  def load_color(_), do: @mint
+  def load_color(load) when load >= 4.0, do: @red
+  def load_color(load) when load >= 2.0, do: @peach
+  def load_color(_), do: @teal
 
-  def temp_color(temp) when is_number(temp) and temp >= 85, do: @critical
-  def temp_color(temp) when is_number(temp) and temp >= 70, do: @warn
-  def temp_color(temp) when is_number(temp), do: @mint
+  def temp_color(temp) when is_number(temp) and temp >= 85, do: @red
+  def temp_color(temp) when is_number(temp) and temp >= 70, do: @peach
+  def temp_color(temp) when is_number(temp), do: @teal
   def temp_color(_), do: @text_dim
 
   def chart_line, do: style(@teal)
   def chart_axis, do: style(@text_dim)
   def bar_default, do: style(@teal)
-  def bar_label, do: style(@text)
+  def bar_label, do: style(@subtext)
   def bar_value, do: style(@text_dim)
-  def table_header, do: style(@cyan, modifiers: [:bold])
+  def table_header, do: style(@sky, modifiers: [:bold])
   def table_row, do: style(@text)
-  def table_highlight, do: style(@teal, modifiers: [:bold])
+  def table_highlight, do: style(@mauve, modifiers: [:bold])
 
   def gauge_accent(:memory), do: @teal
-  def gauge_accent(:swap), do: @cyan
-  def gauge_accent(:disk), do: @aqua
-  def gauge_accent(_), do: @border_bright
+  def gauge_accent(:swap), do: @sky
+  def gauge_accent(:disk), do: @sapphire
+  def gauge_accent(_), do: @lavender
 end

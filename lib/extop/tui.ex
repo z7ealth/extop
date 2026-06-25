@@ -8,6 +8,7 @@ defmodule Extop.TUI do
   alias ExRatatui.Layout.Rect
   alias ExRatatui.Text.{Line, Span}
   alias ExRatatui.Widgets.{Bar, BarChart, Block, Chart, Gauge, Paragraph, Table, Tabs}
+  alias ExRatatui.Widgets.Block.Title
   alias ExRatatui.Widgets.Chart.{Axis, Dataset}
   alias Extop.Theme
 
@@ -249,7 +250,7 @@ defmodule Extop.TUI do
       bar_style: Theme.bar_default(),
       label_style: Theme.bar_label(),
       value_style: Theme.bar_value(),
-      block: panel_block(title, Theme.teal(), borders)
+      block: panel_block(title, Theme.mauve(), borders)
     }
   end
 
@@ -275,7 +276,7 @@ defmodule Extop.TUI do
         style: Theme.chart_axis()
       },
       legend_position: nil,
-      block: panel_block(cpu_chart_title(state), Theme.cyan(), [:top, :right, :bottom])
+      block: panel_block(cpu_chart_title(state), Theme.teal(), [:top, :right, :bottom])
     }
   end
 
@@ -388,18 +389,41 @@ defmodule Extop.TUI do
   end
 
   defp gauge_widget(title, %{total: total, used: used}, kind) do
-    {ratio, label} =
+    accent = Theme.gauge_accent(kind)
+
+    {ratio, stats} =
       if total > 0 do
-        {used / total, "#{format_bytes(used)} / #{format_bytes(total)}"}
+        ratio = used / total
+        pct = Float.round(ratio * 100, 0)
+
+        {ratio,
+         "#{format_bytes(used)} / #{format_bytes(total)}  #{trunc(pct)}%"}
       else
         {0.0, "N/A"}
       end
 
     %Gauge{
       ratio: ratio,
-      label: label,
+      style: Theme.gauge_track(),
       gauge_style: Theme.style(Theme.usage_color(ratio)),
-      block: panel_block(title, Theme.gauge_accent(kind))
+      block: gauge_panel_block(title, stats, accent)
+    }
+  end
+
+  defp gauge_panel_block(title, stats, accent) do
+    %Block{
+      title: " #{title} ",
+      titles: [
+        %Title{
+          content: " #{stats} ",
+          alignment: :right,
+          style: Theme.text_style()
+        }
+      ],
+      borders: [:all],
+      border_type: :rounded,
+      border_style: Theme.panel_border(accent),
+      title_style: Theme.panel_title(accent)
     }
   end
 
@@ -416,7 +440,7 @@ defmodule Extop.TUI do
     %Paragraph{
       text: Enum.join(lines, "\n"),
       style: Theme.text_style(),
-      block: panel_block(" Network ", Theme.aqua())
+      block: panel_block(" Network ", Theme.pink())
     }
   end
 
@@ -439,7 +463,7 @@ defmodule Extop.TUI do
           data: tx_data,
           graph_type: :line,
           marker: :braille,
-          style: Theme.style(Theme.cyan())
+          style: Theme.style(Theme.sky())
         }
       ],
       x_axis: chart_x_axis(state.net_rx_history),
@@ -450,7 +474,7 @@ defmodule Extop.TUI do
         style: Theme.chart_axis()
       },
       legend_position: :top_right,
-      block: panel_block(" Network Graph ", Theme.aqua())
+      block: panel_block(" Network Graph ", Theme.pink())
     }
   end
 
@@ -464,7 +488,7 @@ defmodule Extop.TUI do
     %Paragraph{
       text: lines,
       style: Theme.text_style(),
-      block: panel_block(" System ", Theme.border())
+      block: panel_block(" System ", Theme.flamingo())
     }
   end
 
