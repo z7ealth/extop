@@ -1,19 +1,21 @@
 defmodule Extop.Theme do
   @moduledoc false
 
+  # Catppuccin Mocha — https://github.com/catppuccin/catppuccin
+
   alias ExRatatui.Style
 
-  @teal {:rgb, 0, 212, 170}
-  @cyan {:rgb, 0, 180, 216}
-  @aqua {:rgb, 72, 202, 228}
-  @mint {:rgb, 144, 224, 208}
-  @teal_dim {:rgb, 0, 119, 112}
-  @border {:rgb, 0, 80, 90}
-  @border_bright {:rgb, 0, 140, 130}
-  @text {:rgb, 190, 230, 225}
-  @text_dim {:rgb, 70, 120, 115}
-  @warn {:rgb, 255, 183, 77}
-  @critical {:rgb, 255, 90, 90}
+  @teal {:rgb, 148, 226, 213}
+  @cyan {:rgb, 137, 220, 235}
+  @aqua {:rgb, 116, 199, 236}
+  @mint {:rgb, 166, 227, 161}
+  @teal_dim {:rgb, 203, 166, 247}
+  @border {:rgb, 69, 71, 90}
+  @border_bright {:rgb, 148, 226, 213}
+  @text {:rgb, 205, 214, 244}
+  @text_dim {:rgb, 127, 132, 156}
+  @warn {:rgb, 250, 179, 135}
+  @critical {:rgb, 243, 139, 168}
 
   def teal, do: @teal
   def cyan, do: @cyan
@@ -41,8 +43,8 @@ defmodule Extop.Theme do
 
   def usage_color(ratio) when ratio >= 0.9, do: @critical
   def usage_color(ratio) when ratio >= 0.7, do: @warn
-  def usage_color(ratio) when ratio >= 0.4, do: @cyan
-  def usage_color(_), do: @teal
+  def usage_color(ratio) when ratio >= 0.4, do: @aqua
+  def usage_color(_), do: @mint
 
   def load_color(load) when load >= 4.0, do: @critical
   def load_color(load) when load >= 2.0, do: @warn
@@ -56,7 +58,7 @@ defmodule Extop.Theme do
   def chart_line, do: style(@teal)
   def chart_axis, do: style(@text_dim)
   def bar_default, do: style(@teal)
-  def bar_label, do: style(@mint)
+  def bar_label, do: style(@text)
   def bar_value, do: style(@text_dim)
   def table_header, do: style(@cyan, modifiers: [:bold])
   def table_row, do: style(@text)
