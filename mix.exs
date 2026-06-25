@@ -29,7 +29,8 @@ defmodule Extop.MixProject do
 
   defp aliases do
     [
-      run: ["run --no-halt"]
+      run: "run --no-halt",
+      test: "test --no-start"
     ]
   end
 end

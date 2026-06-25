@@ -48,6 +48,11 @@ defmodule Extop.Theme do
   def load_color(load) when load >= 2.0, do: @warn
   def load_color(_), do: @mint
 
+  def temp_color(temp) when is_number(temp) and temp >= 85, do: @critical
+  def temp_color(temp) when is_number(temp) and temp >= 70, do: @warn
+  def temp_color(temp) when is_number(temp), do: @mint
+  def temp_color(_), do: @text_dim
+
   def chart_line, do: style(@teal)
   def chart_axis, do: style(@text_dim)
   def bar_default, do: style(@teal)

@@ -10,13 +10,17 @@ defmodule Extop.Stats do
           cpu_cores: [%{id: non_neg_integer(), usage: float()}],
           cpu_total: float(),
           cpu_history: [float()],
+          cpu_temp: float() | nil,
+          gpu_usage: float(),
+          gpu_history: [float()],
+          gpu_temp: float() | nil,
           memory: %{total: non_neg_integer(), used: non_neg_integer()},
           swap: %{total: non_neg_integer(), used: non_neg_integer()},
           disk: %{total: non_neg_integer(), used: non_neg_integer()},
           network: [%{name: String.t(), rx_rate: non_neg_integer(), tx_rate: non_neg_integer()}],
           net_rx_history: [non_neg_integer()],
           net_tx_history: [non_neg_integer()],
-          system_info: [String.t()],
+          system_info: [ExRatatui.Text.Line.t()],
           system_info_at: integer(),
           processes: [%{pid: non_neg_integer(), name: String.t(), cpu: float(), mem: float()}],
           prev_cpu: map() | nil,
@@ -37,6 +41,13 @@ defmodule Extop.Stats do
     cpu_history =
       (prev && Map.get(prev, :cpu_history, [])) |> push_history(cpu_total)
 
+    {gpu_usage, gpu_temp} = read_gpu_stats()
+
+    gpu_history =
+      (prev && Map.get(prev, :gpu_history, [])) |> push_history(gpu_usage)
+
+    cpu_temp = read_cpu_temp()
+
     total_rx = Enum.sum(Enum.map(network, & &1.rx_rate))
     total_tx = Enum.sum(Enum.map(network, & &1.tx_rate))
 
@@ -55,6 +66,10 @@ defmodule Extop.Stats do
       cpu_cores: cpu_cores,
       cpu_total: cpu_total,
       cpu_history: cpu_history,
+      cpu_temp: cpu_temp,
+      gpu_usage: gpu_usage,
+      gpu_history: gpu_history,
+      gpu_temp: gpu_temp,
       memory: read_memory(),
       swap: read_swap(),
       disk: read_disk(),
@@ -279,6 +294,110 @@ defmodule Extop.Stats do
 
       _ ->
         %{}
+    end
+  end
+
+  defp read_gpu_stats do
+    case read_nvidia_gpu_stats() do
+      {usage, temp} when is_float(usage) -> {usage, temp}
+      _ -> {read_sysfs_gpu_busy() || 0.0, read_sysfs_gpu_temp()}
+    end
+  end
+
+  defp read_nvidia_gpu_stats do
+    case System.cmd("nvidia-smi", [
+           "--query-gpu=utilization.gpu,temperature.gpu",
+           "--format=csv,noheader,nounits"
+         ], stderr_to_stdout: true) do
+      {output, 0} ->
+        output
+        |> String.trim()
+        |> String.split("\n", trim: true)
+        |> List.first()
+        |> parse_nvidia_gpu_line()
+
+      _ ->
+        nil
+    end
+  rescue
+    _ -> nil
+  end
+
+  defp parse_nvidia_gpu_line(nil), do: nil
+
+  defp parse_nvidia_gpu_line(line) do
+    case String.split(line, ",", parts: 2) do
+      [util, temp] -> {parse_gpu_percent(util), parse_gpu_percent(temp)}
+      [util] -> {parse_gpu_percent(util), nil}
+      _ -> nil
+    end
+  end
+
+  defp read_sysfs_gpu_busy do
+    Path.wildcard("/sys/class/drm/card*/device/gpu_busy_percent")
+    |> Enum.find_value(fn path ->
+      case File.read(path) do
+        {:ok, content} -> parse_gpu_percent(String.trim(content))
+        _ -> nil
+      end
+    end)
+  end
+
+  defp read_sysfs_gpu_temp do
+    Path.wildcard("/sys/class/drm/card*/device/hwmon/hwmon*/temp1_input")
+    |> Enum.find_value(fn path ->
+      case File.read(path) do
+        {:ok, content} ->
+          content |> String.trim() |> String.to_integer() |> Kernel./(1000.0) |> Float.round(1)
+
+        _ ->
+          nil
+      end
+    end)
+  end
+
+  defp read_cpu_temp do
+    read_thermal_temp(["x86_pkg_temp", "TCPU", "cpu"]) ||
+      read_thermal_temp(["acpitz"]) ||
+      read_thermal_zone0_temp()
+  end
+
+  defp read_thermal_temp(preferred_types) do
+    zones =
+      "/sys/class/thermal/thermal_zone*"
+      |> Path.wildcard()
+      |> Enum.reduce(%{}, fn zone, acc ->
+        with {:ok, type} <- File.read(Path.join(zone, "type")),
+             {:ok, temp} <- File.read(Path.join(zone, "temp")),
+             {millidegrees, _} <- Integer.parse(String.trim(temp)) do
+          Map.put(acc, String.trim(type), millidegrees / 1000.0)
+        else
+          _ -> acc
+        end
+      end)
+
+    Enum.find_value(preferred_types, fn type ->
+      case Map.get(zones, type) do
+        nil -> nil
+        temp -> Float.round(temp, 1)
+      end
+    end)
+  end
+
+  defp read_thermal_zone0_temp do
+    case File.read("/sys/class/thermal/thermal_zone0/temp") do
+      {:ok, content} ->
+        content |> String.trim() |> String.to_integer() |> Kernel./(1000.0) |> Float.round(1)
+
+      _ ->
+        nil
+    end
+  end
+
+  defp parse_gpu_percent(value) do
+    case Float.parse(value) do
+      {percent, _} -> Float.round(percent, 1)
+      :error -> nil
     end
   end
 
