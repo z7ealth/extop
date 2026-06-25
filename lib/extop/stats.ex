@@ -3,6 +3,40 @@ defmodule Extop.Stats do
 
   @history_size 60
 
+  # Intel PCI device IDs (8086:XXXX) → marketing name
+  @intel_gpu_names %{
+    "9a40" => "Intel UHD Graphics",
+    "9a49" => "Intel Iris Xe Graphics",
+    "9a59" => "Intel Iris Xe Graphics",
+    "9a60" => "Intel UHD Graphics",
+    "9a68" => "Intel Iris Xe Graphics",
+    "9a70" => "Intel UHD Graphics",
+    "9a78" => "Intel Iris Xe Graphics",
+    "8a51" => "Intel Iris Plus Graphics",
+    "8a52" => "Intel Iris Plus Graphics",
+    "8a53" => "Intel UHD Graphics",
+    "4680" => "Intel UHD Graphics 770",
+    "4682" => "Intel UHD Graphics 770",
+    "4626" => "Intel UHD Graphics 730",
+    "4628" => "Intel UHD Graphics 730",
+    "46a0" => "Intel Iris Xe Graphics",
+    "46a1" => "Intel Iris Xe Graphics",
+    "46a3" => "Intel Iris Xe Graphics",
+    "46a6" => "Intel Iris Xe Graphics",
+    "46aa" => "Intel Iris Xe Graphics",
+    "a780" => "Intel UHD Graphics 770",
+    "a781" => "Intel UHD Graphics 770",
+    "a788" => "Intel UHD Graphics",
+    "a7a0" => "Intel Iris Xe Graphics",
+    "a7a1" => "Intel Iris Xe Graphics",
+    "5690" => "Intel Arc A750",
+    "5691" => "Intel Arc A750",
+    "56a0" => "Intel Arc A770",
+    "56a1" => "Intel Arc A770M",
+    "56a5" => "Intel Arc A730M",
+    "56a6" => "Intel Arc A580"
+  }
+
   @type t :: %{
           hostname: String.t(),
           uptime_seconds: non_neg_integer(),
@@ -11,9 +45,13 @@ defmodule Extop.Stats do
           cpu_total: float(),
           cpu_history: [float()],
           cpu_temp: float() | nil,
+          cpu_name: String.t(),
           gpu_usage: float(),
           gpu_history: [float()],
           gpu_temp: float() | nil,
+          gpu_name: String.t(),
+          gpu_vendor: :nvidia | :amd | :intel | :unknown,
+          gpu_card: map() | nil,
           memory: %{total: non_neg_integer(), used: non_neg_integer()},
           swap: %{total: non_neg_integer(), used: non_neg_integer()},
           disk: %{total: non_neg_integer(), used: non_neg_integer()},
@@ -41,7 +79,7 @@ defmodule Extop.Stats do
     cpu_history =
       (prev && Map.get(prev, :cpu_history, [])) |> push_history(cpu_total)
 
-    {gpu_usage, gpu_temp} = read_gpu_stats()
+    {gpu_usage, gpu_temp, gpu_name, gpu_vendor, gpu_card} = read_gpu(prev)
 
     gpu_history =
       (prev && Map.get(prev, :gpu_history, [])) |> push_history(gpu_usage)
@@ -67,9 +105,13 @@ defmodule Extop.Stats do
       cpu_total: cpu_total,
       cpu_history: cpu_history,
       cpu_temp: cpu_temp,
+      cpu_name: Map.get_lazy(prev || %{}, :cpu_name, &read_cpu_name/0),
       gpu_usage: gpu_usage,
       gpu_history: gpu_history,
       gpu_temp: gpu_temp,
+      gpu_name: gpu_name,
+      gpu_vendor: gpu_vendor,
+      gpu_card: gpu_card,
       memory: read_memory(),
       swap: read_swap(),
       disk: read_disk(),
@@ -297,24 +339,97 @@ defmodule Extop.Stats do
     end
   end
 
-  defp read_gpu_stats do
-    case read_nvidia_gpu_stats() do
-      {usage, temp} when is_float(usage) -> {usage, temp}
-      _ -> {read_sysfs_gpu_busy() || 0.0, read_sysfs_gpu_temp()}
+  defp read_gpu(prev) do
+    card = Map.get_lazy(prev || %{}, :gpu_card, &detect_gpu_card/0)
+    {usage, temp} = gpu_metrics(card)
+    {usage, temp, card.name, card.vendor, card}
+  end
+
+  defp detect_gpu_card do
+    case list_drm_gpus() |> select_gpu_card() do
+      nil -> %{vendor: :unknown, device_path: nil, name: "No GPU"}
+      card -> card
     end
   end
 
-  defp read_nvidia_gpu_stats do
-    case System.cmd("nvidia-smi", [
-           "--query-gpu=utilization.gpu,temperature.gpu",
-           "--format=csv,noheader,nounits"
-         ], stderr_to_stdout: true) do
+  defp list_drm_gpus do
+    "/sys/class/drm/card*/device"
+    |> Path.wildcard()
+    |> Enum.filter(fn path ->
+      path |> Path.dirname() |> Path.basename() |> drm_card?()
+    end)
+    |> Enum.sort()
+    |> Enum.map(&build_gpu_card/1)
+    |> Enum.reject(&is_nil/1)
+  end
+
+  defp drm_card?(name), do: Regex.match?(~r/^card\d+$/, name)
+
+  defp build_gpu_card(device_path) do
+    vendor = read_pci_vendor(device_path)
+
+    if vendor == :unknown do
+      nil
+    else
+      %{
+        vendor: vendor,
+        device_path: device_path,
+        name: read_gpu_device_name(device_path, vendor)
+      }
+    end
+  end
+
+  defp read_pci_vendor(device_path) do
+    case File.read(Path.join(device_path, "vendor")) do
+      {:ok, vendor} ->
+        case String.downcase(String.trim(vendor)) do
+          "0x10de" -> :nvidia
+          "0x1002" -> :amd
+          "0x8086" -> :intel
+          _ -> :unknown
+        end
+
+      _ ->
+        :unknown
+    end
+  end
+
+  defp select_gpu_card([]), do: nil
+
+  defp select_gpu_card(cards) do
+    nvidia_drm = Enum.find(cards, &(&1.vendor == :nvidia))
+
+    case read_nvidia_smi_metrics() do
+      %{name: name} ->
+        %{
+          vendor: :nvidia,
+          device_path: nvidia_drm && nvidia_drm.device_path,
+          name: name
+        }
+
+      _ ->
+        Enum.find(cards, &(&1.vendor == :nvidia)) ||
+          Enum.find(cards, &(&1.vendor == :amd)) ||
+          Enum.find(cards, &(&1.vendor == :intel)) ||
+          List.first(cards)
+    end
+  end
+
+  defp read_nvidia_smi_metrics do
+    case System.cmd(
+           "nvidia-smi",
+           [
+             "--query-gpu=name,utilization.gpu,temperature.gpu",
+             "--format=csv,noheader,nounits"
+           ],
+           stderr_to_stdout: true
+         ) do
       {output, 0} ->
         output
         |> String.trim()
         |> String.split("\n", trim: true)
         |> List.first()
-        |> parse_nvidia_gpu_line()
+        |> parse_nvidia_smi_line()
 
       _ ->
         nil
@@ -323,43 +438,221 @@ defmodule Extop.Stats do
     _ -> nil
   end
 
-  defp parse_nvidia_gpu_line(nil), do: nil
+  defp parse_nvidia_smi_line(nil), do: nil
 
-  defp parse_nvidia_gpu_line(line) do
-    case String.split(line, ",", parts: 2) do
-      [util, temp] -> {parse_gpu_percent(util), parse_gpu_percent(temp)}
-      [util] -> {parse_gpu_percent(util), nil}
+  defp parse_nvidia_smi_line(line) do
+    case String.split(line, ",", parts: 3) do
+      [name, util, temp] ->
+        %{
+          name: String.trim(name),
+          usage: parse_gpu_percent(util),
+          temp: parse_gpu_percent(temp)
+        }
+
+      [name, util] ->
+        %{
+          name: String.trim(name),
+          usage: parse_gpu_percent(util),
+          temp: nil
+        }
+
+      _ ->
+        nil
+    end
+  end
+
+  defp gpu_metrics(%{vendor: :nvidia} = card) do
+    case read_nvidia_smi_metrics() do
+      %{usage: usage, temp: temp} ->
+        {usage || 0.0, temp || read_device_temp(card.device_path)}
+
+      _ ->
+        {read_device_busy(card) || 0.0, read_device_temp(card.device_path)}
+    end
+  end
+
+  defp gpu_metrics(%{vendor: :amd} = card) do
+    {read_device_busy(card) || 0.0, read_device_temp(card.device_path)}
+  end
+
+  defp gpu_metrics(%{vendor: :intel} = card) do
+    {read_device_busy(card) || 0.0, read_device_temp(card.device_path)}
+  end
+
+  defp gpu_metrics(%{vendor: :unknown}) do
+    {0.0, nil}
+  end
+
+  defp read_gpu_device_name(device_path, vendor) do
+    cond do
+      (name = read_sysfs_string(Path.join(device_path, "product_name"))) != nil ->
+        name
+
+      vendor == :nvidia ->
+        case read_nvidia_smi_metrics() do
+          %{name: name} -> name
+          _ -> "NVIDIA GPU"
+        end
+
+      vendor == :amd ->
+        driver_label(device_path, "AMD Radeon Graphics")
+
+      vendor == :intel ->
+        intel_name_from_pci(device_path) || driver_label(device_path, "Intel Graphics")
+
+      true ->
+        "Unknown GPU"
+    end
+  end
+
+  defp driver_label(device_path, fallback) do
+    case File.read(Path.join(device_path, "uevent")) do
+      {:ok, content} ->
+        content
+        |> String.split("\n")
+        |> Enum.find_value(fn line ->
+          case String.split(line, "=", parts: 2) do
+            ["DRIVER", driver] when driver not in ["", "simple-framebuffer"] ->
+              case driver do
+                "i915" -> nil
+                "xe" -> nil
+                "amdgpu" -> "AMD Radeon Graphics"
+                "nvidia" -> "NVIDIA GPU"
+                "nouveau" -> "NVIDIA GPU"
+                other -> other
+              end
+
+            _ ->
+              nil
+          end
+        end) || fallback
+
+      _ ->
+        fallback
+    end
+  end
+
+  defp read_sysfs_string(path) do
+    case File.read(path) do
+      {:ok, value} ->
+        trimmed = String.trim(value)
+        if trimmed != "" and trimmed not in ["unknown", "Unknown"], do: trimmed
+
+      _ ->
+        nil
+    end
+  end
+
+  defp intel_name_from_pci(device_path) do
+    case read_pci_device_id(device_path) do
+      id when is_binary(id) -> Map.get(@intel_gpu_names, String.downcase(id))
       _ -> nil
     end
   end
 
-  defp read_sysfs_gpu_busy do
-    Path.wildcard("/sys/class/drm/card*/device/gpu_busy_percent")
+  defp read_pci_device_id(device_path) do
+    case read_sysfs_string(Path.join(device_path, "device")) do
+      "0x" <> id ->
+        id
+
+      id when is_binary(id) ->
+        String.trim_leading(id, "0x")
+
+      _ ->
+        read_pci_id_from_uevent(device_path)
+    end
+  end
+
+  defp read_pci_id_from_uevent(device_path) do
+    case File.read(Path.join(device_path, "uevent")) do
+      {:ok, content} ->
+        content
+        |> String.split("\n")
+        |> Enum.find_value(fn line ->
+          case String.split(line, "=", parts: 2) do
+            ["PCI_ID", "8086:" <> id] -> id
+            _ -> nil
+          end
+        end)
+
+      _ ->
+        nil
+    end
+  end
+
+  defp read_device_busy(%{vendor: :amd, device_path: path}) when is_binary(path) do
+    read_percent_file(Path.join(path, "gpu_busy_percent"))
+  end
+
+  defp read_device_busy(%{vendor: :intel, device_path: path}) when is_binary(path) do
+    intel_busy_paths(path)
+    |> Enum.find_value(&read_percent_file/1)
+  end
+
+  defp read_device_busy(%{vendor: :nvidia, device_path: path}) when is_binary(path) do
+    read_percent_file(Path.join(path, "gpu_busy_percent"))
+  end
+
+  defp read_device_busy(_), do: nil
+
+  defp intel_busy_paths(device_path) do
+    [
+      Path.join(device_path, "gt/gt0/gt_busy_percent"),
+      Path.join(device_path, "gt_busy_percent")
+    ] ++ Path.wildcard(Path.join(device_path, "gt/gt*/gt_busy_percent"))
+  end
+
+  defp read_percent_file(path) do
+    case File.read(path) do
+      {:ok, content} -> parse_gpu_percent(String.trim(content))
+      _ -> nil
+    end
+  end
+
+  defp read_device_temp(nil), do: nil
+
+  defp read_device_temp(device_path) when is_binary(device_path) do
+    device_path
+    |> Path.join("hwmon/hwmon*/temp*_input")
+    |> Path.wildcard()
     |> Enum.find_value(fn path ->
       case File.read(path) do
-        {:ok, content} -> parse_gpu_percent(String.trim(content))
+        {:ok, content} -> parse_millidegrees(content)
         _ -> nil
       end
     end)
   end
 
-  defp read_sysfs_gpu_temp do
-    Path.wildcard("/sys/class/drm/card*/device/hwmon/hwmon*/temp1_input")
-    |> Enum.find_value(fn path ->
-      case File.read(path) do
-        {:ok, content} ->
-          content |> String.trim() |> String.to_integer() |> Kernel./(1000.0) |> Float.round(1)
-
-        _ ->
-          nil
-      end
-    end)
+  defp parse_millidegrees(content) do
+    case Integer.parse(String.trim(content)) do
+      {millidegrees, _} -> Float.round(millidegrees / 1000.0, 1)
+      :error -> nil
+    end
   end
 
   defp read_cpu_temp do
     read_thermal_temp(["x86_pkg_temp", "TCPU", "cpu"]) ||
       read_thermal_temp(["acpitz"]) ||
       read_thermal_zone0_temp()
+  end
+
+  defp read_cpu_name do
+    case File.read("/proc/cpuinfo") do
+      {:ok, content} ->
+        content
+        |> String.split("\n")
+        |> Enum.find_value(fn line ->
+          if String.starts_with?(line, "model name") do
+            line
+            |> String.split(":", parts: 2)
+            |> Enum.at(1)
+            |> String.trim()
+          end
+        end) || "Unknown CPU"
+
+      _ ->
+        "Unknown CPU"
+    end
   end
 
   defp read_thermal_temp(preferred_types) do

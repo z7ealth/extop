@@ -12,6 +12,9 @@ defmodule ExtopTest do
     assert is_list(stats.cpu_cores)
     assert is_float(stats.cpu_total)
     assert is_list(stats.cpu_history)
+    assert is_binary(stats.cpu_name)
+    assert is_binary(stats.gpu_name)
+    assert stats.gpu_vendor in [:nvidia, :amd, :intel, :unknown]
     assert %{total: _, used: _} = stats.memory
     assert %{total: _, used: _} = stats.swap
     assert %{total: _, used: _} = stats.disk

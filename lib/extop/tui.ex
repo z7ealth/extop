@@ -354,20 +354,34 @@ defmodule Extop.TUI do
     }
   end
 
-  defp cpu_panel_title(state) do
-    " CPU #{format_util(state.cpu_total)} #{format_temp(state.cpu_temp)} "
-  end
+  defp cpu_panel_title(_state), do: " CPU "
 
   defp cpu_chart_title(state) do
-    " #{format_util(state.cpu_total)} #{format_temp(state.cpu_temp)} "
+    " #{short_hardware_name(state.cpu_name, 36)} · #{format_util(state.cpu_total)} · #{format_temp(state.cpu_temp)} "
   end
 
-  defp gpu_panel_title(state) do
-    " GPU #{format_util(state.gpu_usage)} #{format_temp(state.gpu_temp)} "
-  end
+  defp gpu_panel_title(_state), do: " GPU "
 
   defp gpu_chart_title(state) do
-    " #{format_util(state.gpu_usage)} #{format_temp(state.gpu_temp)} "
+    " #{short_hardware_name(state.gpu_name, 36)} · #{format_util(state.gpu_usage)} · #{format_temp(state.gpu_temp)} "
+  end
+
+  defp short_hardware_name(name, max) when is_binary(name) do
+    name
+    |> String.replace("(R)", "")
+    |> String.replace("(TM)", "")
+    |> String.replace(~r/\s+@.*\z/, "")
+    |> String.replace(~r/\s+/, " ")
+    |> String.trim()
+    |> truncate(max)
+  end
+
+  defp short_hardware_name(_, _max), do: "N/A"
+
+  defp truncate(text, max) when byte_size(text) <= max, do: text
+
+  defp truncate(text, max) do
+    String.slice(text, 0, max - 3) <> "..."
   end
 
   defp format_util(value) when is_float(value), do: "#{Float.round(value, 1)}%"
