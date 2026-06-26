@@ -8,7 +8,6 @@ defmodule Extop.TUI do
   alias ExRatatui.Layout.Rect
   alias ExRatatui.Text.{Line, Span}
   alias ExRatatui.Widgets.{Bar, BarChart, Block, Chart, Gauge, Paragraph, Table, Tabs}
-  alias ExRatatui.Widgets.Block.Title
   alias ExRatatui.Widgets.Chart.{Axis, Dataset}
   alias Extop.Theme
   alias Extop.Processes
@@ -484,26 +483,20 @@ defmodule Extop.TUI do
 
     %Gauge{
       ratio: ratio,
+      label: stats,
       style: Theme.gauge_track(),
-      gauge_style: Theme.style(Theme.usage_color(ratio)),
-      block: gauge_panel_block(title, stats, accent)
+      gauge_style: Theme.gauge_fill(ratio),
+      block: gauge_panel_block(title, accent)
     }
   end
 
-  defp gauge_panel_block(title, stats, accent) do
+  defp gauge_panel_block(title, accent) do
     %Block{
       title: " #{title} ",
-      titles: [
-        %Title{
-          content: " #{stats} ",
-          alignment: :right,
-          style: Theme.text_style()
-        }
-      ],
+      title_style: Theme.gauge_name_style(),
       borders: [:all],
       border_type: :rounded,
-      border_style: Theme.panel_border(accent),
-      title_style: Theme.panel_title(accent)
+      border_style: Theme.panel_border(accent)
     }
   end
 

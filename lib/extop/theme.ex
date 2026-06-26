@@ -48,7 +48,9 @@ defmodule Extop.Theme do
 
   def panel_border(accent \\ @border_bright), do: style(accent)
   def panel_title(accent), do: style(accent, modifiers: [:bold])
-  def gauge_track, do: style(nil, bg: @surface)
+  def gauge_track, do: style(@text, bg: @surface, modifiers: [:bold])
+  def gauge_fill(ratio), do: style(@text, bg: usage_color(ratio), modifiers: [:bold])
+  def gauge_name_style, do: style(@subtext, modifiers: [:bold])
   def header_border, do: style(@mauve, modifiers: [:bold])
   def title_style, do: style(@teal, modifiers: [:bold])
   def accent_style, do: style(@sky, modifiers: [:bold])
