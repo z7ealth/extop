@@ -46,7 +46,7 @@ mix run
 
 Press `q` or `Esc` to quit.
 
-## Release
+## Install
 
 Build a standalone release:
 
