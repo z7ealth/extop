@@ -485,7 +485,7 @@ defmodule Extop.TUI do
       ratio: ratio,
       label: stats,
       style: Theme.gauge_track(),
-      gauge_style: Theme.gauge_fill(ratio),
+      gauge_style: Theme.gauge_fill(kind),
       block: gauge_panel_block(title, accent)
     }
   end
