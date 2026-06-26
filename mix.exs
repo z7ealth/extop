@@ -8,7 +8,8 @@ defmodule Extop.MixProject do
       elixir: "~> 1.20",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
-      aliases: aliases()
+      aliases: aliases(),
+      releases: releases()
     ]
   end
 
@@ -32,5 +33,37 @@ defmodule Extop.MixProject do
       run: "run --no-halt",
       test: "test --no-start"
     ]
+  end
+
+  defp releases do
+    [
+      extop: [
+        include_executables_for: [:unix],
+        steps: [:assemble, &default_start_command/1]
+      ]
+    ]
+  end
+
+  defp default_start_command(%Mix.Release{path: path} = release) do
+    bin = Path.join(path, "bin/extop")
+
+    patched =
+      bin
+      |> File.read!()
+      |> String.replace(
+        "case $1 in",
+        """
+        if [ -z "$1" ]; then
+          set -- start
+        fi
+
+        case $1 in
+        """,
+        global: false
+      )
+
+    File.write!(bin, patched)
+    File.chmod!(bin, 0o755)
+    release
   end
 end

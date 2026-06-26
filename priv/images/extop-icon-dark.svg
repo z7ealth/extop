@@ -1,0 +1,15 @@
+<svg width="256" height="256" viewBox="0 0 256 256" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="extop icon">
+  <defs><clipPath id="dc"><path d="M 184 52 C 184 92, 206 120, 212 140 C 218 160, 212 186, 184 186 C 156 186, 150 160, 156 140 C 162 120, 184 92, 184 52 Z"/></clipPath></defs>
+  <rect width="256" height="256" rx="56" fill="#181825"/>
+  <rect x="1.5" y="1.5" width="253" height="253" rx="54.5" fill="none" stroke="#cba6f7" stroke-width="3" opacity="0.45"/>
+  <path d="M 60 78 L 96 128 L 60 178" fill="none" stroke="#89dceb" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="112" y="114" width="26" height="28" rx="5" fill="#45475a"/>
+  <g clip-path="url(#dc)">
+    <rect x="148" y="45" width="72" height="145" fill="#b4befe"/>
+    <path d="M 184 52 L 212 140 L 212 160 L 196 186 L 184 186 Z" fill="#9a86e0"/>
+    <path d="M 184 52 L 202 178 L 184 186 Z" fill="#7f6fc9"/>
+    <path d="M 184 52 L 170 150 L 158 150 L 172 95 Z" fill="#cdc4fb"/>
+  </g>
+  <path d="M 184 52 C 184 92, 206 120, 212 140 C 218 160, 212 186, 184 186 C 156 186, 150 160, 156 140 C 162 120, 184 92, 184 52 Z" fill="none" stroke="#cba6f7" stroke-width="2.5"/>
+  <ellipse cx="170" cy="160" rx="4.5" ry="6" fill="#ffffff" opacity="0.6"/>
+</svg>
