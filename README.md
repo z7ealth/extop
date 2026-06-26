@@ -25,6 +25,8 @@
 - A terminal with true-color support
 - Elixir 1.20+ (for development)
 
+**OTP version:** OTP 29 is recommended. On Elixir 1.20.2, extop starts and exits noticeably faster on OTP 29 than on OTP 28.
+
 Optional: `gsettings` for GTK theme details on the System tab.
 
 ## Development
