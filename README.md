@@ -21,11 +21,17 @@
 
 ## Requirements
 
+### Running a release
+
 - Linux with `/proc` and `/sys` (tested on Ubuntu)
 - A terminal with true-color support
-- Elixir 1.20+ (for development)
 
-**OTP version:** OTP 29 is recommended. On Elixir 1.20.2, extop starts and exits noticeably faster on OTP 29 than on OTP 28.
+A compiled release is self-contained — you do not need Elixir or Erlang installed to run it.
+
+### Building from source
+
+- **Elixir** 1.19+ (see `mix.exs`)
+- **Erlang/OTP** — OTP 29 is recommended. On Elixir 1.20.2, extop starts and exits noticeably faster on OTP 29 than on OTP 28.
 
 Optional: `gsettings` for GTK theme details on the System tab.
 
@@ -55,6 +61,15 @@ Run it directly - no `start` subcommand needed:
 ```
 
 Copy `_build/prod/rel/extop` anywhere and run `bin/extop` from that directory.
+
+Add the release `bin` directory to your `PATH` to run `extop` from anywhere:
+
+```bash
+export PATH="/path/to/extop/_build/prod/rel/extop/bin:$PATH"
+extop
+```
+
+For a permanent setup, add that line to `~/.bashrc`, `~/.zshrc`, or your shell profile.
 
 Release management commands still work when passed explicitly:
 
