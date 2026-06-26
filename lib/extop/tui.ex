@@ -7,7 +7,7 @@ defmodule Extop.TUI do
   alias ExRatatui.Layout
   alias ExRatatui.Layout.Rect
   alias ExRatatui.Text.{Line, Span}
-  alias ExRatatui.Widgets.{Bar, BarChart, Block, Chart, Gauge, Paragraph, Table, Tabs}
+  alias ExRatatui.Widgets.{Bar, BarChart, Block, Chart, Paragraph, Table, Tabs}
   alias ExRatatui.Widgets.Chart.{Axis, Dataset}
   alias Extop.Theme
   alias Extop.Processes
@@ -253,6 +253,9 @@ defmodule Extop.TUI do
     }
   end
 
+  @cpu_bar_height 1
+  @cpu_bar_gap 0
+
   defp cpu_cores_widgets(state, area) do
     bars = cpu_core_bars(state)
     col_count = cpu_core_column_count(length(bars), area)
@@ -277,10 +280,15 @@ defmodule Extop.TUI do
   end
 
   defp cpu_core_column_count(bar_count, area) do
-    max_rows = max(area.height - 3, 3)
-    by_height = div(bar_count + max_rows - 1, max_rows) |> max(1)
-    by_width = max(1, div(area.width, 14))
-    min(by_height, by_width) |> max(1)
+    per_col = cpu_bars_per_column(area)
+    div(bar_count + per_col - 1, per_col) |> max(1)
+  end
+
+  defp cpu_bars_per_column(area) do
+    inner_height = max(area.height - 2, 1)
+    row_cost = @cpu_bar_height + @cpu_bar_gap
+
+    div(inner_height + @cpu_bar_gap, row_cost) |> max(1)
   end
 
   defp cpu_cores_borders(0, 1), do: [:left, :top, :bottom]
@@ -312,6 +320,8 @@ defmodule Extop.TUI do
       data: bars,
       direction: :horizontal,
       max: 100,
+      bar_width: @cpu_bar_height,
+      bar_gap: @cpu_bar_gap,
       bar_style: Theme.bar_default(),
       label_style: Theme.bar_label(),
       value_style: Theme.bar_value(),
@@ -385,7 +395,7 @@ defmodule Extop.TUI do
         ]),
       style: Theme.text_style(),
       block: %Block{
-        title: " extop ",
+        title: " extop v#{Extop.version()} ",
         borders: [:all],
         border_type: :rounded,
         border_style: Theme.header_border()
@@ -456,47 +466,35 @@ defmodule Extop.TUI do
   defp format_temp(temp) when is_number(temp), do: "#{Float.round(temp, 1)}°C"
 
   defp memory_widget(state) do
-    gauge_widget(" Memory ", state.memory, :memory)
+    resource_widget(" Memory ", state.memory, :memory)
   end
 
   defp swap_widget(state) do
-    gauge_widget(" Swap ", state.swap, :swap)
+    resource_widget(" Swap ", state.swap, :swap)
   end
 
   defp disk_widget(state) do
-    gauge_widget(" Disk / ", state.disk, :disk)
+    resource_widget(" Disk / ", state.disk, :disk)
   end
 
-  defp gauge_widget(title, %{total: total, used: used}, kind) do
+  defp resource_widget(title, %{total: total, used: used}, kind) do
     accent = Theme.gauge_accent(kind)
 
-    {ratio, stats} =
+    stats =
       if total > 0 do
         ratio = used / total
-        pct = Float.round(ratio * 100, 0)
+        pct = ratio * 100
 
-        {ratio,
-         "#{format_bytes(used)} / #{format_bytes(total)}  #{trunc(pct)}%"}
+        "#{format_bytes(used)} / #{format_bytes(total)}  #{trunc(Float.round(pct, 0))}%"
       else
-        {0.0, "N/A"}
+        "N/A"
       end
 
-    %Gauge{
-      ratio: ratio,
-      label: stats,
-      style: Theme.gauge_track(),
-      gauge_style: Theme.gauge_fill(kind),
-      block: gauge_panel_block(title, accent)
-    }
-  end
-
-  defp gauge_panel_block(title, accent) do
-    %Block{
-      title: " #{title} ",
-      title_style: Theme.gauge_name_style(),
-      borders: [:all],
-      border_type: :rounded,
-      border_style: Theme.panel_border(accent)
+    %Paragraph{
+      text: stats,
+      style: Theme.text_style(),
+      alignment: :center,
+      block: panel_block(title, accent)
     }
   end
 

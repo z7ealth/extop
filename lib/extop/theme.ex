@@ -19,8 +19,6 @@ defmodule Extop.Theme do
   @red {:rgb, 237, 135, 150}
   @border {:rgb, 73, 77, 100}
   @border_bright {:rgb, 139, 213, 202}
-  @surface {:rgb, 54, 58, 79}
-  @base {:rgb, 36, 39, 58}
   @text {:rgb, 202, 211, 245}
   @subtext {:rgb, 184, 192, 224}
   @text_dim {:rgb, 128, 135, 162}
@@ -43,15 +41,14 @@ defmodule Extop.Theme do
   def style(fg, opts \\ []) do
     %Style{
       fg: fg,
+      bg: Keyword.get(opts, :bg),
+      underline_color: Keyword.get(opts, :underline_color),
       modifiers: Keyword.get(opts, :modifiers, [])
     }
   end
 
   def panel_border(accent \\ @border_bright), do: style(accent)
   def panel_title(accent), do: style(accent, modifiers: [:bold])
-  def gauge_track, do: style(@text, bg: @surface, modifiers: [:bold])
-  def gauge_fill(kind), do: style(@base, bg: gauge_accent(kind), modifiers: [:bold])
-  def gauge_name_style, do: style(@subtext, modifiers: [:bold])
   def header_border, do: style(@mauve, modifiers: [:bold])
   def title_style, do: style(@teal, modifiers: [:bold])
   def accent_style, do: style(@sky, modifiers: [:bold])

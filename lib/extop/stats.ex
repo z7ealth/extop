@@ -37,6 +37,21 @@ defmodule Extop.Stats do
     "56a6" => "Intel Arc A580"
   }
 
+  @amd_gpu_names %{
+    "747e" => "Radeon RX 7700 XT / 7800 XT",
+    "744c" => "Radeon RX 6800 / 6800 XT / 6900 XT",
+    "73df" => "Radeon RX 6600 / 6600 XT / 6700 XT",
+    "7340" => "Radeon RX 7600 / 7600 XT",
+    "7480" => "Radeon RX 7700S / 7600S",
+    "15bf" => "Radeon 780M",
+    "15c8" => "Radeon 780M",
+    "164e" => "Radeon 780M",
+    "1900" => "Radeon 8060S",
+    "1901" => "Radeon 8050S"
+  }
+
+  @cpu_hwmon_names ~w(k10temp coretemp zenpower cpu_thermal)
+
   @type t :: %{
           hostname: String.t(),
           uptime_seconds: non_neg_integer(),
@@ -517,14 +532,16 @@ defmodule Extop.Stats do
       vendor == :nvidia ->
         case read_nvidia_smi_metrics() do
           %{name: name} -> name
-          _ -> "NVIDIA GPU"
+          _ -> lspci_gpu_name(device_path) || "NVIDIA GPU"
         end
 
       vendor == :amd ->
-        driver_label(device_path, "AMD Radeon Graphics")
+        amd_name_from_pci(device_path) || lspci_gpu_name(device_path) ||
+          driver_label(device_path, "AMD Radeon Graphics")
 
       vendor == :intel ->
-        intel_name_from_pci(device_path) || driver_label(device_path, "Intel Graphics")
+        intel_name_from_pci(device_path) || lspci_gpu_name(device_path) ||
+          driver_label(device_path, "Intel Graphics")
 
       true ->
         "Unknown GPU"
@@ -576,6 +593,72 @@ defmodule Extop.Stats do
     end
   end
 
+  defp amd_name_from_pci(device_path) do
+    case read_pci_device_id(device_path) do
+      id when is_binary(id) -> Map.get(@amd_gpu_names, String.downcase(id))
+      _ -> nil
+    end
+  end
+
+  defp lspci_gpu_name(device_path) do
+    with slot when is_binary(slot) <- read_uevent_field(device_path, "PCI_SLOT_NAME"),
+         {output, 0} <- System.cmd("lspci", ["-nn", "-s", slot], stderr_to_stdout: true) do
+      parse_lspci_gpu_name(output)
+    else
+      _ -> nil
+    end
+  rescue
+    _ -> nil
+  end
+
+  defp read_uevent_field(device_path, key) do
+    case File.read(Path.join(device_path, "uevent")) do
+      {:ok, content} ->
+        content
+        |> String.split("\n")
+        |> Enum.find_value(fn line ->
+          case String.split(line, "=", parts: 2) do
+            [^key, value] -> String.trim(value)
+            _ -> nil
+          end
+        end)
+
+      _ ->
+        nil
+    end
+  end
+
+  defp parse_lspci_gpu_name(output) do
+    output = String.trim(output)
+
+    cond do
+      match = Regex.run(~r/\[(Radeon[^[\]]+)\]/, output) ->
+        List.last(match)
+
+      match = Regex.run(~r/\[(GeForce[^[\]]+)\]/, output) ->
+        List.last(match)
+
+      match = Regex.run(~r/\[(Arc [^[\]]+)\]/, output) ->
+        List.last(match)
+
+      true ->
+        case String.split(output, ": ", parts: 2) do
+          [_, desc] ->
+            desc
+            |> String.replace(~r/\s*\[[0-9a-f]{4}:[0-9a-f]{4}\]\s*$/i, "")
+            |> String.replace(~r/\[[0-9a-f]{4}\]:\s*/, "")
+            |> String.trim()
+            |> case do
+              "" -> nil
+              name -> name
+            end
+
+          _ ->
+            nil
+        end
+    end
+  end
+
   defp read_pci_device_id(device_path) do
     case read_sysfs_string(Path.join(device_path, "device")) do
       "0x" <> id ->
@@ -590,16 +673,12 @@ defmodule Extop.Stats do
   end
 
   defp read_pci_id_from_uevent(device_path) do
-    case File.read(Path.join(device_path, "uevent")) do
-      {:ok, content} ->
-        content
-        |> String.split("\n")
-        |> Enum.find_value(fn line ->
-          case String.split(line, "=", parts: 2) do
-            ["PCI_ID", "8086:" <> id] -> id
-            _ -> nil
-          end
-        end)
+    case read_uevent_field(device_path, "PCI_ID") do
+      pci_id when is_binary(pci_id) ->
+        case String.split(pci_id, ":", parts: 2) do
+          [_vendor, id] -> String.downcase(id)
+          _ -> nil
+        end
 
       _ ->
         nil
@@ -657,9 +736,75 @@ defmodule Extop.Stats do
   end
 
   defp read_cpu_temp do
-    read_thermal_temp(["x86_pkg_temp", "TCPU", "cpu"]) ||
+    read_hwmon_cpu_temp() ||
+      read_thermal_temp(["x86_pkg_temp", "TCPU", "cpu"]) ||
       read_thermal_temp(["acpitz"]) ||
       read_thermal_zone0_temp()
+  end
+
+  defp read_hwmon_cpu_temp do
+    "/sys/class/hwmon/hwmon*"
+    |> Path.wildcard()
+    |> Enum.find_value(&hwmon_cpu_temp/1)
+  end
+
+  defp hwmon_cpu_temp(dir) do
+    with {:ok, name} <- File.read(Path.join(dir, "name")),
+         true <- String.trim(name) in @cpu_hwmon_names do
+      read_labeled_hwmon_temp(dir, ["Tctl", "Tdie", "Package id 0", "CPU"]) ||
+        read_first_hwmon_temp(dir)
+    else
+      _ -> nil
+    end
+  end
+
+  defp read_labeled_hwmon_temp(dir, preferred_labels) do
+    labels =
+      dir
+      |> Path.join("temp*_label")
+      |> Path.wildcard()
+      |> Enum.reduce(%{}, fn label_path, acc ->
+        with {:ok, label} <- File.read(label_path),
+             num when is_binary(num) <- hwmon_temp_number(label_path) do
+          Map.put(acc, String.trim(label), num)
+        else
+          _ -> acc
+        end
+      end)
+
+    Enum.find_value(preferred_labels, fn label ->
+      case Map.get(labels, label) do
+        nil -> nil
+        num -> read_hwmon_temp_file(dir, num)
+      end
+    end)
+  end
+
+  defp hwmon_temp_number(path) do
+    case Regex.run(~r/temp(\d+)_label$/, path) do
+      [_, num] -> num
+      _ -> nil
+    end
+  end
+
+  defp read_hwmon_temp_file(dir, num) do
+    case File.read(Path.join(dir, "temp#{num}_input")) do
+      {:ok, content} -> parse_millidegrees(content)
+      _ -> nil
+    end
+  end
+
+  defp read_first_hwmon_temp(dir) do
+    dir
+    |> Path.join("temp*_input")
+    |> Path.wildcard()
+    |> Enum.sort()
+    |> Enum.find_value(fn path ->
+      case File.read(path) do
+        {:ok, content} -> parse_millidegrees(content)
+        _ -> nil
+      end
+    end)
   end
 
   defp read_cpu_name do
