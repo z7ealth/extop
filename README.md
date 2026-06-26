@@ -1,9 +1,9 @@
 <p align="center">
-  <img src="priv/images/extop-logo-dark.png" alt="extop — live system monitoring, brewed in elixir" width="520">
+  <img src="priv/images/extop-logo-dark.png" alt="extop - live system monitoring, brewed in elixir" width="520">
 </p>
 
 <p align="center">
-  A btop-like system monitor for Linux, built in Elixir with <a href="https://hex.pm/packages/ex_ratatui">ex_ratatui</a>.
+  A system monitor for Linux, built in Elixir with <a href="https://hex.pm/packages/ex_ratatui">ex_ratatui</a>.
 </p>
 
 <p align="center">
@@ -14,10 +14,10 @@
 
 ## Features
 
-- **Dashboard** — CPU cores, memory/swap/disk gauges, GPU usage (NVIDIA, AMD, Intel), and live charts
-- **Processes** — sortable table, name/user/PID filter, send signals (TERM, KILL, STOP, CONT, HUP, INT)
-- **Network** — per-interface throughput and history graph
-- **System** — native host info (OS, kernel, desktop, battery, IPs, …) plus live BEAM/OTP runtime metrics
+- **Dashboard** - CPU cores, memory/swap/disk gauges, GPU usage (NVIDIA, AMD, Intel), and live charts
+- **Processes** - sortable table, name/user/PID filter, send signals (TERM, KILL, STOP, CONT, HUP, INT)
+- **Network** - per-interface throughput and history graph
+- **System** - native host info (OS, kernel, desktop, battery, IPs, …) plus live BEAM/OTP runtime metrics
 
 ## Requirements
 
@@ -46,7 +46,7 @@ Build a standalone release:
 MIX_ENV=prod mix release
 ```
 
-Run it directly — no `start` subcommand needed:
+Run it directly - no `start` subcommand needed:
 
 ```bash
 ./_build/prod/rel/extop/bin/extop

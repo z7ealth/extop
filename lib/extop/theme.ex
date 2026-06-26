@@ -1,7 +1,7 @@
 defmodule Extop.Theme do
   @moduledoc false
 
-  # Catppuccin Macchiato — softer contrast than Mocha, warmer mid-tones
+  # Catppuccin Macchiato - softer contrast than Mocha, warmer mid-tones
   # https://github.com/catppuccin/catppuccin
 
   alias ExRatatui.Style

@@ -1,6 +1,6 @@
 defmodule Extop do
   @moduledoc """
-  A btop-like system monitor built with [ex_ratatui](https://hex.pm/packages/ex_ratatui).
+  A system monitor built with [ex_ratatui](https://hex.pm/packages/ex_ratatui).
 
   ## Usage
 
